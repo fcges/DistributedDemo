@@ -7,7 +7,9 @@
 #include "APITestOverlay.generated.h"
 
 class UListFleetsBox;
+class UFleetId;
 class UAPITestManager;
+struct FDSListFleetsResponse;
 
 /**
  * 
@@ -21,8 +23,8 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	TSubclassOf<UAPITestManager> APITestManagerClass;
 	
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UListFleetsBox> ListFleetsBox;
+	UPROPERTY(EditDefaultsOnly)
+	TSubclassOf<UFleetId> FleetIdWidgetClass;
 	
 protected:
 	virtual void NativeConstruct() override;
@@ -31,4 +33,13 @@ private:
 	
 	UPROPERTY()
 	TObjectPtr<UAPITestManager> APITestManager;
+	
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UListFleetsBox> ListFleetsBox;
+	
+	UFUNCTION()
+	void ListFleetsButtonClicked();
+	
+	UFUNCTION()
+	void OnListFleetsResponseReceived(const FDSListFleetsResponse& ListFleetsResponse, bool bWasSuccessful);
 };

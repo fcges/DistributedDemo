@@ -6,7 +6,10 @@
 #include "UObject/Object.h"
 #include "HTTPRequestManager.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAPIStatusMessage, const FString&, StatusMessage, bool, bShouldResetJoinGameButton);
+
 class UAPIData;
+class FJsonObject;
 /**
  * 
  */
@@ -18,4 +21,9 @@ class DEDICATEDSERVERS_API UHTTPRequestManager : public UObject
 protected:
 	UPROPERTY(EditDefaultsOnly)
 	TObjectPtr<UAPIData> APIData;
+	
+	bool ContainsErrors(TSharedPtr<FJsonObject> JsonObject);
+	void DumpMetaData(TSharedPtr<FJsonObject> JsonObject);
+	
+	FString SerializeJsonContent(const TMap<FString, FString>& Params);
 };

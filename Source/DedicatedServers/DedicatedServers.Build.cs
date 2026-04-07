@@ -27,7 +27,11 @@ public class DedicatedServers : ModuleRules
         }
         bEnableExceptions = true;
 
-        PrivateDependencyModuleNames.AddRange(new string[] { "UMG" });
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+	        "UMG",
+	        "Json", "JsonUtilities"
+        });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"DedicatedServers"
