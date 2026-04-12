@@ -11,6 +11,7 @@
 #include "AbilitySystemComponent.h"
 // #include "PlayerHUDWidget.h"
 #include "RPGAttributeSet.h"
+#include "Character/StatusComponent.h"
 #include "CombatCharacter.generated.h"
 
 class USpringArmComponent;
@@ -54,6 +55,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Attributes", Replicated, meta = (AllowPrivateAccess = "true"))
 	URPGAttributeSet* AttributeSet;
+
+	/** Unified status facade for UI (Health/MP/etc), backed by GAS attributes. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStatusComponent> StatusComponent;
 
 	void InitializeAttributes();
 
@@ -183,15 +188,24 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Camera", meta = (ClampMin = 0, ClampMax = 1000, Units = "cm"))
 	float DefaultCameraDistance = 400.0f;
 
-	/** Time to wait before respawning the character */
-	UPROPERTY(EditAnywhere, Category = "Respawn", meta = (ClampMin = 0, ClampMax = 10, Units = "s"))
-	float RespawnTime = 3.0f;
+	/** Replicated death flag so all clients can run death cosmetics when this pawn dies */
+	UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Damage")
+	bool bIsDead = false;
+
+	UFUNCTION()
+	void OnRep_IsDead();
+
+	/** Applies death visuals/physics locally. Camera changes only run on locally controlled pawns. */
+	void ApplyDeathEffects(bool bFromReplication);
 
 	/** Attack montage ended delegate */
 	FOnMontageEnded OnAttackMontageEnded;
 
-	/** Character respawn timer */
-	FTimerHandle RespawnTimer;
+
+	/**
+	 * Respawn is handled by the authoritative GameMode/Controller.
+	 * Keep no local respawn timer on the pawn (prevents clients or pawns racing the server timer).
+	 */
 
 	/** Copy of the mesh's transform so we can reset it after ragdoll animations */
 	FTransform MeshStartingTransform;
@@ -319,6 +333,13 @@ public:
 	/** Handles damage and knockback events */
 	virtual void ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse) override;
 
+	/**
+	 * Damage must be applied authoritatively on the server so death state replicates to all clients.
+	 * If a client detects a hit, it forwards the request here.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerApplyDamage(float Damage, AActor* DamageCauser, FVector_NetQuantize DamageLocation, FVector_NetQuantizeNormal DamageImpulseDir, float DamageImpulseStrength);
+
 	/** Handles death events */
 	virtual void HandleDeath() override;
 
@@ -363,6 +384,7 @@ protected:
 	/** Blueprint handler to play damage received effects */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Combat")
 	void ReceivedDamage(float Damage, const FVector& ImpactPoint, const FVector& DamageDirection);
+
 
 protected:
 

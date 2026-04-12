@@ -9,7 +9,7 @@
 
 ACombatGameMode::ACombatGameMode()
 {
-	RespawnTime = 10.f;
+	RespawnTime = 15.f;
 }
 
 void ACombatGameMode::Tick(float DeltaTime)

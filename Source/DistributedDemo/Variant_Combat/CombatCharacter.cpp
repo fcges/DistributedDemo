@@ -22,6 +22,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
+// Server-authoritative respawn flow lives in the combat GameMode.
+#include "Variant_Combat/CombatGameMode.h"
+
 ACombatCharacter::ACombatCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -68,6 +71,7 @@ ACombatCharacter::ACombatCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
 	AttributeSet = CreateDefaultSubobject<URPGAttributeSet>(TEXT("AttributeSet"));
+	StatusComponent = CreateDefaultSubobject<UStatusComponent>(TEXT("StatusComponent"));
 }
 
 UAbilitySystemComponent* ACombatCharacter::GetAbilitySystemComponent() const
@@ -404,6 +408,15 @@ void ACombatCharacter::CheckChargedAttack()
 
 void ACombatCharacter::ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse)
 {
+	// Damage/death must happen on the server so bIsDead and physics state replicate correctly.
+	if (!HasAuthority())
+	{
+		const FVector ImpulseDir = DamageImpulse.GetSafeNormal();
+		const float ImpulseStrength = DamageImpulse.Size();
+		ServerApplyDamage(Damage, DamageCauser, DamageLocation, ImpulseDir, ImpulseStrength);
+		return;
+	}
+
 	// pass the damage event to the actor
 	FDamageEvent DamageEvent;
 	const float ActualDamage = TakeDamage(Damage, DamageEvent, nullptr, DamageCauser);
@@ -425,6 +438,13 @@ void ACombatCharacter::ApplyDamage(float Damage, AActor* DamageCauser, const FVe
 		ReceivedDamage(ActualDamage, DamageLocation, DamageImpulse.GetSafeNormal());
 	}
 
+}
+
+void ACombatCharacter::ServerApplyDamage_Implementation(float Damage, AActor* DamageCauser, FVector_NetQuantize DamageLocation,
+	FVector_NetQuantizeNormal DamageImpulseDir, float DamageImpulseStrength)
+{
+	const FVector DamageImpulse = FVector(DamageImpulseDir) * DamageImpulseStrength;
+	ApplyDamage(Damage, DamageCauser, FVector(DamageLocation), DamageImpulse);
 }
 
 void ACombatCharacter::SetLevel(float level)
@@ -454,8 +474,27 @@ void ACombatCharacter::UpdateLifebar()
 
 void ACombatCharacter::HandleDeath()
 {
+	// Death/respawn must be server-authoritative so it works correctly with multiple clients.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (bIsDead)
+	{
+		return;
+	}
+
+	bIsDead = true;
+	// Trigger death cosmetics on the server too (mostly relevant for listen-server host).
+	ApplyDeathEffects(false);
+
 	// disable movement while we're dead
 	GetCharacterMovement()->DisableMovement();
+	GetCharacterMovement()->StopMovementImmediately();
+
+	// Make sure collision won't keep interacting while ragdolled.
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// enable full ragdoll physics
 	GetMesh()->SetSimulatePhysics(true);
@@ -466,8 +505,20 @@ void ACombatCharacter::HandleDeath()
 	// pull back the camera
 	GetCameraBoom()->TargetArmLength = DeathCameraDistance;
 
-	// schedule respawning
-	GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &ACombatCharacter::RespawnCharacter, RespawnTime, false);
+	// Schedule respawn via the authoritative GameMode.
+	// NOTE: CombatGameMode expects (ElimTime + RespawnTime). We pass ElimTime=0 here.
+	if (UWorld* World = GetWorld())
+	{
+		if (ACombatGameMode* GM = World->GetAuthGameMode<ACombatGameMode>())
+		{
+			GM->StartPlayerElimination(0.f, this, Cast<APlayerController>(GetController()), nullptr);
+		}
+		else
+		{
+			// Fallback: if there is no CombatGameMode (e.g., wrong mode), destroy on server.
+			Destroy();
+		}
+	}
 }
 
 void ACombatCharacter::ApplyHealing(float Healing, AActor* Healer)
@@ -477,8 +528,7 @@ void ACombatCharacter::ApplyHealing(float Healing, AActor* Healer)
 
 void ACombatCharacter::RespawnCharacter()
 {
-	// destroy the character and let it be respawned by the Player Controller
-	Destroy();
+	// Respawn is handled by the authoritative GameMode/Controller.
 }
 
 float ACombatCharacter::TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -662,6 +712,78 @@ void ACombatCharacter::HandleLevelChanged(const FOnAttributeChangeData& Data)
 	UpdateLifebar();
 }
 
+void ACombatCharacter::OnRep_IsDead()
+{
+	ApplyDeathEffects(true);
+}
+
+void ACombatCharacter::ApplyDeathEffects(bool bFromReplication)
+{
+	// Dedicated server has no local visuals; server already applies authoritative state in HandleDeath.
+	if (IsRunningDedicatedServer())
+	{
+		return;
+	}
+
+	// Apply the same *visual/physics* state on all clients when bIsDead replicates.
+	// (Authoritative gameplay such as respawn timing still lives in GameMode.)
+	if (bIsDead)
+	{
+		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+		{
+			MoveComp->DisableMovement();
+			MoveComp->StopMovementImmediately();
+		}
+
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+
+		if (USkeletalMeshComponent* SkelMesh = GetMesh())
+		{
+			SkelMesh->SetSimulatePhysics(true);
+			SkelMesh->SetPhysicsBlendWeight(1.0f);
+		}
+
+		if (LifeBar)
+		{
+			LifeBar->SetHiddenInGame(true);
+		}
+	}
+	else
+	{
+		// In case you ever clear bIsDead (e.g., seamless respawn without destroying pawn), restore state.
+		if (USkeletalMeshComponent* SkelMesh = GetMesh())
+		{
+			SkelMesh->SetSimulatePhysics(false);
+			SkelMesh->SetPhysicsBlendWeight(0.0f);
+			SkelMesh->SetRelativeTransform(MeshStartingTransform);
+		}
+
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		}
+
+		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+
+		if (LifeBar)
+		{
+			LifeBar->SetHiddenInGame(false);
+		}
+	}
+
+	// Camera changes only run on locally controlled pawns.
+	if (IsLocallyControlled() && CameraBoom)
+	{
+		CameraBoom->TargetArmLength = bIsDead ? DeathCameraDistance : DefaultCameraDistance;
+	}
+}
+
 void ACombatCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -670,14 +792,12 @@ void ACombatCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(ACombatCharacter, AttributeSet);
 	DOREPLIFETIME(ACombatCharacter, bIsAttacking);
 	DOREPLIFETIME(ACombatCharacter, bIsChargingAttack);
+	DOREPLIFETIME(ACombatCharacter, bIsDead);
 }
 
 void ACombatCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
-
-	// clear the respawn timer
-	GetWorld()->GetTimerManager().ClearTimer(RespawnTimer);
 }
 
 void ACombatCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

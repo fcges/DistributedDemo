@@ -13,6 +13,7 @@ public class DedicatedServers : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"Slate",
+			"SlateCore",
 			"GameplayTags",
 			"HTTP"
         });

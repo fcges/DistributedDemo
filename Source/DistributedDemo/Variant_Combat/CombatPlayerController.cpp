@@ -7,6 +7,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerStart.h"
 #include "CombatCharacter.h"
+#include "Variant_Combat/CombatGameMode.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Blueprint/UserWidget.h"
@@ -90,11 +91,18 @@ void ACombatPlayerController::SetRespawnTransform(const FTransform& NewRespawn)
 
 void ACombatPlayerController::OnPawnDestroyed(AActor* DestroyedActor)
 {
-	// spawn a new character at the respawn transform
-	if (ACombatCharacter* RespawnedCharacter = GetWorld()->SpawnActor<ACombatCharacter>(CharacterClass, RespawnTransform))
+	// Respawn must be initiated by the server (GameMode) so the new pawn replicates to everyone.
+	if (!HasAuthority())
 	{
-		// possess the character
-		Possess(RespawnedCharacter);
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (ACombatGameMode* GM = World->GetAuthGameMode<ACombatGameMode>())
+		{
+			GM->RequestRespawn(Cast<ACharacter>(DestroyedActor), this);
+		}
 	}
 }
 

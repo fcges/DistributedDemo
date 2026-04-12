@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/PlayerController.h"
+#include "Player/DSPlayerController.h"
 #include "CombatPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -15,7 +15,7 @@ class ACombatCharacter;
  *  Respawns the player character at the checkpoint when it's destroyed
  */
 UCLASS(abstract, Config="Game")
-class ACombatPlayerController : public APlayerController
+class ACombatPlayerController : public ADSPlayerController
 {
 	GENERATED_BODY()
 	

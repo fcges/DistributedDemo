@@ -34,4 +34,18 @@ public:
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> Button_Back;
+	
+	UFUNCTION()
+	void UpdateStatusMessage(const FString& Message, bool bShouldResetWidgets);
+	
+	void ClearTextBoxes();
+	
+protected:
+	
+	virtual void NativeConstruct() override;
+	
+private:
+	
+	UFUNCTION()
+	void UpdateConfirmButtonState(const FText& Text);
 };
