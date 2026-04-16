@@ -3,13 +3,16 @@
 
 #include "Game/DS_GameModeBase.h"
 
+#include "Kismet/GameplayStatics.h"
 #include "Player/DSPlayerController.h"
+#if WITH_GAMELIFT
+#include "GameLiftServerSDK.h"
+#endif
 
 void ADS_GameModeBase::StartCountdownTimer(FCountdownTimerHandle& CountdownTimerHandle)
 {
 	CountdownTimerHandle.TimerFinishedDelegate.BindWeakLambda(this, [&]()
 	{
-		StopCountdownTimer(CountdownTimerHandle);
 		OnCountdownTimerFinished(CountdownTimerHandle.Type);
 	});
 	
@@ -64,4 +67,31 @@ void ADS_GameModeBase::UpdateCountdownTimer(const FCountdownTimerHandle& Countdo
 void ADS_GameModeBase::OnCountdownTimerFinished(ECountdownTimerType Type)
 {
 	
+}
+
+void ADS_GameModeBase::TrySeamlessTravel(TSoftObjectPtr<UWorld> DestinationMap)
+{
+	const FString MapName = DestinationMap.ToSoftObjectPath().GetAssetName();
+	if (GIsEditor)
+	{
+		UGameplayStatics::OpenLevelBySoftObjectPtr(this, DestinationMap);
+	}
+	else
+	{
+		GetWorld()->ServerTravel(MapName);
+	}
+}
+
+void ADS_GameModeBase::RemovePlayerSession(AController* Exiting)
+{
+	ADSPlayerController* DSPlayerController = Cast<ADSPlayerController>(Exiting);
+	if (!IsValid(DSPlayerController)) return;
+    
+#if WITH_GAMELIFT
+	const FString& PlayerSessionId = DSPlayerController->PlayerSessionId;
+	if (!PlayerSessionId.IsEmpty())
+	{
+		Aws::GameLift::Server::RemovePlayerSession(TCHAR_TO_ANSI(*PlayerSessionId));
+	}
+#endif
 }

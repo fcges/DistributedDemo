@@ -15,7 +15,8 @@ public class DedicatedServers : ModuleRules
 			"Slate",
 			"SlateCore",
 			"GameplayTags",
-			"HTTP"
+			"HTTP",
+			"NetCore"
         });
 
         if (Target.Type == TargetType.Server)

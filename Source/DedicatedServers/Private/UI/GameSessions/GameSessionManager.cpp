@@ -89,10 +89,11 @@ void UGameSessionManager::CreatePlayerSession_Response(FHttpRequestPtr Request, 
 			LocalPlayerController->SetInputMode(InputModeData);
 			LocalPlayerController->SetShowMouseCursor(false);
 		}
+		const FString Options = "?PlayerSessionId=" + PlayerSession.PlayerSessionId + "?Username=" + PlayerSession.PlayerId;
 		
 		const FString IpAndPort = PlayerSession.IpAddress + TEXT(":") + FString::FromInt(PlayerSession.Port);
 		const FName Address(*IpAndPort);
-		UGameplayStatics::OpenLevel(this, Address);
+		UGameplayStatics::OpenLevel(this, Address, true, Options);
 	}
 }
 
@@ -116,7 +117,12 @@ void UGameSessionManager::HandleGameSessionStatus(const FString& Status, const F
 	if (Status.Equals(TEXT("ACTIVE")))
 	{
 		BroadcastJoinGameSessionMessage.Broadcast(TEXT("Found active GameSession. Creating a PlayerSession."), false);
-		TryCreatePlayerSession(GetUniquePlayerId(), SessionId);
+		
+		if (UDSLocalPlayerSubsystem* DSLocalPlayerSubsystem = GetLocalPlayerSubsystem(); IsValid(DSLocalPlayerSubsystem))
+		{
+			TryCreatePlayerSession(DSLocalPlayerSubsystem->Username, SessionId);
+		}
+		
 	}
 	else if (Status.Equals(TEXT("ACTIVATING")))
 	{

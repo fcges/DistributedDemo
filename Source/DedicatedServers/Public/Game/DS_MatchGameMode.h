@@ -18,6 +18,8 @@ public:
 	
 	ADS_MatchGameMode();
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void Logout(AController* Exiting) override;
+	virtual void InitSeamlessTravelPlayer(AController* NewController) override;
 	
 	UPROPERTY()
 	EMatchStatus MatchStatus;
@@ -34,4 +36,9 @@ protected:
 	FCountdownTimerHandle PostMatchTimer;
 	
 	virtual void OnCountdownTimerFinished(ECountdownTimerType Type) override;
+	
+	UPROPERTY(EditDefaultsOnly)
+	TSoftObjectPtr<UWorld> LobbyMap;
+	
+	void SetClientInputEnabled(bool bEnabled);
 };

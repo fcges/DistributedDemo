@@ -21,6 +21,9 @@
 #include "RPGAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "Character/MatchPlayerState.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 
 // Server-authoritative respawn flow lives in the combat GameMode.
 #include "Variant_Combat/CombatGameMode.h"
@@ -29,6 +32,7 @@ ACombatCharacter::ACombatCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
+	bEnableGameActions = true;
 	SetReplicateMovement(true);
 
 	// Keep animation notifies and sockets updating on dedicated servers during combat montages.
@@ -81,6 +85,7 @@ UAbilitySystemComponent* ACombatCharacter::GetAbilitySystemComponent() const
 
 void ACombatCharacter::Move(const FInputActionValue& Value)
 {
+	if (!bEnableGameActions) return;
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
@@ -98,12 +103,14 @@ void ACombatCharacter::Look(const FInputActionValue& Value)
 
 void ACombatCharacter::ComboAttackPressed()
 {
+	if (!bEnableGameActions) return;
 	// route the input
 	DoComboAttackStart();
 }
 
 void ACombatCharacter::ChargedAttackPressed()
 {
+	if (!bEnableGameActions) return;
 	// route the input
 	DoChargedAttackStart();
 }
@@ -406,6 +413,25 @@ void ACombatCharacter::CheckChargedAttack()
 	}
 }
 
+APlayerController* ACombatCharacter::ResolvePlayerControllerFromDamageCauser(AActor* DamageCauser) const
+{
+	if (!IsValid(DamageCauser))
+	{
+		return nullptr;
+	}
+
+	AController* InstigatorController = DamageCauser->GetInstigatorController();
+	if (!InstigatorController)
+	{
+		if (const APawn* DamagePawn = Cast<APawn>(DamageCauser))
+		{
+			InstigatorController = DamagePawn->GetController();
+		}
+	}
+
+	return Cast<APlayerController>(InstigatorController);
+}
+
 void ACombatCharacter::ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse)
 {
 	// Damage/death must happen on the server so bIsDead and physics state replicate correctly.
@@ -419,7 +445,8 @@ void ACombatCharacter::ApplyDamage(float Damage, AActor* DamageCauser, const FVe
 
 	// pass the damage event to the actor
 	FDamageEvent DamageEvent;
-	const float ActualDamage = TakeDamage(Damage, DamageEvent, nullptr, DamageCauser);
+	APlayerController* DamageInstigatorController = ResolvePlayerControllerFromDamageCauser(DamageCauser);
+	const float ActualDamage = TakeDamage(Damage, DamageEvent, DamageInstigatorController, DamageCauser);
 
 	// only process knockback and effects if we received nonzero damage
 	if (ActualDamage > 0.0f)
@@ -457,6 +484,15 @@ void ACombatCharacter::SetExp(float exp)
 	AttributeSet->SetCurrentExp(exp);
 }
 
+void ACombatCharacter::EnableGameActions_Implementation(bool bEnable)
+{
+	bEnableGameActions = bEnable;
+	if (!bEnableGameActions)
+	{
+		ChargedAttackReleased();
+	}
+}
+
 void ACombatCharacter::UpdateLifebar()
 {
 	if (!AttributeSet || !LifeBarWidget)
@@ -474,6 +510,57 @@ void ACombatCharacter::UpdateLifebar()
 
 void ACombatCharacter::HandleDeath()
 {
+	HandleDeath(nullptr);
+}
+
+void ACombatCharacter::AwardKillDeathAssist(APlayerController* KillerController)
+{
+	AMatchPlayerState* VictimState = Cast<AMatchPlayerState>(GetPlayerState());
+	if (VictimState)
+	{
+		VictimState->AddDeath();
+	}
+
+	APlayerController* VictimController = Cast<APlayerController>(GetController());
+	APlayerController* ValidKillerController = (KillerController && KillerController != VictimController) ? KillerController : nullptr;
+	APlayerState* VictimPlayerState = VictimController ? VictimController->PlayerState.Get() : GetPlayerState();
+	APlayerState* KillerPlayerState = ValidKillerController ? ValidKillerController->PlayerState.Get() : nullptr;
+	const bool bVictimIsPlayer = VictimState != nullptr;
+
+	if (bVictimIsPlayer && ValidKillerController)
+	{
+		if (AMatchPlayerState* KillerState = Cast<AMatchPlayerState>(KillerPlayerState))
+		{
+			KillerState->AddKill();
+		}
+	}
+
+	const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	for (auto It = RecentPlayerDamageTimes.CreateIterator(); It; ++It)
+	{
+		APlayerState* AssisterPlayerState = It.Key().Get();
+		if (!AssisterPlayerState || CurrentTime - It.Value() > AssistWindowSeconds)
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		if (!bVictimIsPlayer || AssisterPlayerState == VictimPlayerState || AssisterPlayerState == KillerPlayerState)
+		{
+			continue;
+		}
+
+		if (AMatchPlayerState* AssisterState = Cast<AMatchPlayerState>(AssisterPlayerState))
+		{
+			AssisterState->AddAssist();
+		}
+	}
+
+	RecentPlayerDamageTimes.Reset();
+}
+
+void ACombatCharacter::HandleDeath(AController* KillerController)
+{
 	// Death/respawn must be server-authoritative so it works correctly with multiple clients.
 	if (!HasAuthority())
 	{
@@ -486,6 +573,7 @@ void ACombatCharacter::HandleDeath()
 	}
 
 	bIsDead = true;
+	AwardKillDeathAssist(Cast<APlayerController>(KillerController));
 	// Trigger death cosmetics on the server too (mostly relevant for listen-server host).
 	ApplyDeathEffects(false);
 
@@ -511,7 +599,7 @@ void ACombatCharacter::HandleDeath()
 	{
 		if (ACombatGameMode* GM = World->GetAuthGameMode<ACombatGameMode>())
 		{
-			GM->StartPlayerElimination(0.f, this, Cast<APlayerController>(GetController()), nullptr);
+			GM->StartPlayerElimination(0.f, this, Cast<APlayerController>(GetController()), Cast<APlayerController>(KillerController));
 		}
 		else
 		{
@@ -534,9 +622,20 @@ void ACombatCharacter::RespawnCharacter()
 float ACombatCharacter::TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	float CurrentHP = AttributeSet->GetCurrentHealth();
-	float MaxHP = AttributeSet->GetMaxHealth();
 	if (CurrentHP <= 0.0f) return 0.0f;
 	UE_LOG(LogTemp, Log, TEXT("Damage: %f"), Damage);
+
+	if (APlayerController* DamagePlayerController = Cast<APlayerController>(EventInstigator))
+	{
+		if (APlayerState* DamagePlayerState = DamagePlayerController->PlayerState)
+		{
+			APlayerState* VictimPlayerState = GetPlayerState();
+			if (DamagePlayerState != VictimPlayerState)
+			{
+				RecentPlayerDamageTimes.FindOrAdd(DamagePlayerState) = GetWorld()->GetTimeSeconds();
+			}
+		}
+	}
 
 	CurrentHP -= Damage;
 	AttributeSet->SetCurrentHealth(CurrentHP);
@@ -545,7 +644,7 @@ float ACombatCharacter::TakeDamage(float Damage, struct FDamageEvent const& Dama
 	if (CurrentHP <= 0.0f)
 	{
 		// die
-		HandleDeath();
+		HandleDeath(EventInstigator);
 	}
 	else
 	{

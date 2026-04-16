@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "Blueprint/UserWidget.h"
 #include "DistributedDemo.h"
+#include "EnhancedInputComponent.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 void ACombatPlayerController::BeginPlay()
@@ -51,6 +52,9 @@ void ACombatPlayerController::BeginPlay()
 void ACombatPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	
+	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
+	EnhancedInputComponent->BindAction(QuitAction, ETriggerEvent::Started, this, &ACombatPlayerController::Input_Quit);
 
 	// only add IMCs for local player controllers
 	if (IsLocalPlayerController())
@@ -83,10 +87,35 @@ void ACombatPlayerController::OnPossess(APawn* InPawn)
 	InPawn->OnDestroyed.AddDynamic(this, &ACombatPlayerController::OnPawnDestroyed);
 }
 
+ACombatPlayerController::ACombatPlayerController()
+{
+	bQuitMenuOpen = false;
+}
+
 void ACombatPlayerController::SetRespawnTransform(const FTransform& NewRespawn)
 {
 	// save the new respawn transform
 	RespawnTransform = NewRespawn;
+}
+
+void ACombatPlayerController::EnableInput(APlayerController* PlayerController)
+{
+	Super::EnableInput(PlayerController);
+	
+	if (IsValid(GetPawn()) && GetPawn()->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_EnableGameActions(GetPawn(), true);
+	}
+}
+
+void ACombatPlayerController::DisableInput(APlayerController* PlayerController)
+{
+	Super::DisableInput(PlayerController);
+	
+	if (IsValid(GetPawn()) && GetPawn()->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_EnableGameActions(GetPawn(), false);
+	}
 }
 
 void ACombatPlayerController::OnPawnDestroyed(AActor* DestroyedActor)
@@ -110,4 +139,23 @@ bool ACombatPlayerController::ShouldUseTouchControls() const
 {
 	// are we on a mobile platform? Should we force touch?
 	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
+}
+
+void ACombatPlayerController::Input_Quit()
+{
+	bQuitMenuOpen = !bQuitMenuOpen;
+	if (bQuitMenuOpen)
+	{
+		FInputModeGameAndUI InputMode;
+		SetInputMode(InputMode);
+		SetShowMouseCursor(true);
+		OnQuitMenuOpen.Broadcast(true);
+	}
+	else
+	{
+		FInputModeGameOnly InputMode;
+		SetInputMode(InputMode);
+		SetShowMouseCursor(false);
+		OnQuitMenuOpen.Broadcast(false);
+	}
 }

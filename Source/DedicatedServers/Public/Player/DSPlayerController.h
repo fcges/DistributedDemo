@@ -21,6 +21,9 @@ public:
 	
 	ADSPlayerController();
 	virtual void ReceivedPlayer() override;
+	virtual void OnRep_PlayerState() override;
+	virtual void PostSeamlessTravel() override;
+	virtual void BeginPlay() override;
 	
 	UFUNCTION(Client, Reliable)
 	void Client_TimerUpdated(float CountdownTimeLeft, ECountdownTimerType Type) const;
@@ -28,11 +31,20 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_TimerStopped(float CountdownTimeLeft, ECountdownTimerType Type) const;
 	
+	UFUNCTION(Client, Reliable)
+	void Client_SetInputEnabled(bool bEnabled);
+	
 	UPROPERTY(BlueprintAssignable)
 	FOnTimerStateChangedDelegate OnTimerUpdated;
 	
 	UPROPERTY(BlueprintAssignable)
 	FOnTimerStateChangedDelegate OnTimerStopped;
+	
+	UPROPERTY(BlueprintReadOnly)
+	FString Username;
+	
+	UPROPERTY(BlueprintReadOnly)
+	FString PlayerSessionId;
 	
 protected:
 	

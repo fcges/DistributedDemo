@@ -3,6 +3,7 @@
 
 #include "Variant_Combat/CombatGameMode.h"
 
+#include "Character/MatchPlayerState.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -10,6 +11,7 @@
 ACombatGameMode::ACombatGameMode()
 {
 	RespawnTime = 15.f;
+	PlayerStateClass = AMatchPlayerState::StaticClass();
 }
 
 void ACombatGameMode::Tick(float DeltaTime)

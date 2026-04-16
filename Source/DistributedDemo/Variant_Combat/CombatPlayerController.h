@@ -3,8 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputAction.h"
 #include "Player/DSPlayerController.h"
 #include "CombatPlayerController.generated.h"
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnQuitMenuOpen, bool, bOpen);
 
 class UInputMappingContext;
 class ACombatCharacter;
@@ -60,9 +63,20 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 
 public:
+	
+	ACombatPlayerController();
+	
+	UPROPERTY(BlueprintAssignable)
+	FOnQuitMenuOpen OnQuitMenuOpen;
 
 	/** Updates the character respawn transform */
 	void SetRespawnTransform(const FTransform& NewRespawn);
+	
+	virtual void EnableInput(APlayerController* PlayerController) override;
+	virtual void DisableInput(APlayerController* PlayerController) override;
+	
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UInputAction> QuitAction;
 
 protected:
 
@@ -72,5 +86,11 @@ protected:
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+	
+private:
+	
+	void Input_Quit();
+	
+	bool bQuitMenuOpen;
 
 };

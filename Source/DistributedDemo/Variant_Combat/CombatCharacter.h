@@ -10,6 +10,7 @@
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
 // #include "PlayerHUDWidget.h"
+#include "PlayerInterface.h"
 #include "RPGAttributeSet.h"
 #include "Character/StatusComponent.h"
 #include "CombatCharacter.generated.h"
@@ -20,6 +21,7 @@ class UInputAction;
 struct FInputActionValue;
 class UCombatLifeBar;
 class UWidgetComponent;
+class APlayerState;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogCombatCharacter, Log, All);
 
@@ -32,7 +34,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogCombatCharacter, Log, All);
  *  - Respawning
  */
 UCLASS(abstract)
-class ACombatCharacter : public ACharacter, public ICombatAttacker, public ICombatDamageable, public IAbilitySystemInterface
+class ACombatCharacter : public ACharacter, public ICombatAttacker, public ICombatDamageable, public IAbilitySystemInterface, public IPlayerInterface
 {
 	GENERATED_BODY()
 
@@ -228,6 +230,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Level")
 	void SetExp(float exp);
+	
+	void EnableGameActions_Implementation(bool bEnable) override;
 
 protected:
 
@@ -342,6 +346,7 @@ public:
 
 	/** Handles death events */
 	virtual void HandleDeath() override;
+	void HandleDeath(AController* KillerController);
 
 	/** Handles healing events */
 	virtual void ApplyHealing(float Healing, AActor* Healer) override;
@@ -417,8 +422,18 @@ private:
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleExpChanged(const FOnAttributeChangeData& Data);
 	void HandleLevelChanged(const FOnAttributeChangeData& Data);
+	APlayerController* ResolvePlayerControllerFromDamageCauser(AActor* DamageCauser) const;
+	void AwardKillDeathAssist(APlayerController* KillerController);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// Tracks recent player damage to this character for assist attribution.
+	TMap<TWeakObjectPtr<APlayerState>, float> RecentPlayerDamageTimes;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Stats")
+	float AssistWindowSeconds = 60.0f;
+	
+	bool bEnableGameActions;
 
 	// set in editor: WBP_PauseMenu
 	/*UPROPERTY(EditAnywhere, Category = "UI")
