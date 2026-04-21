@@ -4,12 +4,26 @@
 #include "Character/MatchPlayerState.h"
 
 #include "Net/UnrealNetwork.h"
+#include "UI/HTTP/HTTPRequestTypes.h"
 
 AMatchPlayerState::AMatchPlayerState()
 	: KillCount(0)
 	, DeathCount(0)
 	, AssistCount(0)
 {
+}
+
+void AMatchPlayerState::OnMatchEnded(const FString& Username)
+{
+	Super::OnMatchEnded(Username);
+	
+	FDSRecordMatchStatsInput RecordMatchStatsInput;
+	RecordMatchStatsInput.username = Username;
+	RecordMatchStatsInput.matchStats.kills = KillCount;
+	RecordMatchStatsInput.matchStats.deaths = DeathCount;
+	RecordMatchStatsInput.matchStats.assists = AssistCount;
+	
+	RecordMatchStats(RecordMatchStatsInput);
 }
 
 void AMatchPlayerState::AddKill()

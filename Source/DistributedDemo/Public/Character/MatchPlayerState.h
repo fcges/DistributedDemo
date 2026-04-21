@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/PlayerState.h"
+#include "Player/DS_MatchPlayerState.h"
 #include "MatchPlayerState.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnMatchStatsChanged, int32, int32, int32);
@@ -12,12 +12,13 @@ DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnMatchStatsChanged, int32, int32, int32
  * 
  */
 UCLASS()
-class DISTRIBUTEDDEMO_API AMatchPlayerState : public APlayerState
+class DISTRIBUTEDDEMO_API AMatchPlayerState : public ADS_MatchPlayerState
 {
 	GENERATED_BODY()
 
 public:
 	AMatchPlayerState();
+	virtual void OnMatchEnded(const FString& Username) override;
 
 	void AddKill();
 	void AddDeath();

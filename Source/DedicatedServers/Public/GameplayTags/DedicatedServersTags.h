@@ -23,5 +23,7 @@ namespace DedicatedServersTags
 	namespace GameStatsAPI
 	{
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(RecordMatchStats);
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(UpdateLeaderboard);
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(RetrieveLeaderboard);
 	}
 }

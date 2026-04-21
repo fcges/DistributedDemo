@@ -7,6 +7,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/DSPlayerController.h"
 
 ACombatGameMode::ACombatGameMode()
 {
@@ -56,4 +57,23 @@ void ACombatGameMode::RequestRespawn(ACharacter* ElimmedCharacter, AController* 
 		int32 Selection = FMath::RandRange(0, PlayerStarts.Num() - 1);
 		RestartPlayerAtPlayerStart(ElimmedController, PlayerStarts[Selection]);
 	}
+}
+
+void ACombatGameMode::OnMatchEnded()
+{
+	Super::OnMatchEnded();
+	
+	TArray<FString> Usernames;
+	if (UWorld* World = GetWorld())
+	{
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (ADSPlayerController* PC = Cast<ADSPlayerController>(It->Get()); IsValid(PC))
+			{
+				Usernames.Add(PC->Username);
+			}
+		}
+	}
+	
+	UpdateLeaderboard(Usernames);
 }
